@@ -69,6 +69,11 @@ class Document(object):
             " ".join(["%s:%d" % (word, count) for (word, count) in self.counts.iteritems()]))
         # print self.counts.sorted()
     
+    def __getitem__(self, key):
+        """Delegate to self.counts"""
+        return self.counts[key]
+    
+    
 
 class Corpus(list):
     """docstring for Corpus"""
@@ -86,7 +91,7 @@ class Corpus(list):
             else:
                 doc   = Document(self.vocabulary, label)
                 doc.readfile(doc_path)
-                print doc
+                # print doc
                 self.append(doc)
    
          
