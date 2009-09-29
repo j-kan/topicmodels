@@ -85,14 +85,15 @@ class Corpus(list):
         """docstring for readfiles"""
         label = os.path.basename(directory)
         for doc_filename in os.listdir(directory):
-            doc_path = "%s/%s" % (directory, doc_filename)
-            if (os.path.isdir(doc_path)):
-                self.readfiles(doc_path)
-            else:
-                doc   = Document(self.vocabulary, label)
-                doc.readfile(doc_path)
-                # print doc
-                self.append(doc)
+            if doc_filename[0] != '.':
+                doc_path = "%s/%s" % (directory, doc_filename)
+                if (os.path.isdir(doc_path)):
+                    self.readfiles(doc_path)
+                else:
+                    doc   = Document(self.vocabulary, label)
+                    doc.readfile(doc_path)
+                    # print doc
+                    self.append(doc)
    
          
 

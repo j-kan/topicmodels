@@ -9,6 +9,7 @@ from corpus import *
 # import collections
 import numpy
 import collections
+from math import log
 
 
 detailed_trace = False
@@ -17,7 +18,7 @@ detailed_trace = False
 class DocumentTopicAssignment(collections.defaultdict):
     """docstring for DocumentTopicAssignment"""
     
-    def __init__(self, doc, numTopics):
+    def __init__(self, numTopics):
 
         def random_vector():
             """initialize a random vector"""
@@ -25,8 +26,12 @@ class DocumentTopicAssignment(collections.defaultdict):
             vec /- vec.sum()
             return vec
 
-        super(DocumentTopicAssignment, self).__init__(random_vector)
-        self.doc = doc
+        def zero_vector():
+            """initialize a zero vector"""
+            return numpy.zeros((numTopics))
+
+        super(DocumentTopicAssignment, self).__init__(zero_vector)
+        # self.doc = doc
         # self.gamma_j = collections.defaultdict(random_vector)
 
 
@@ -51,98 +56,20 @@ class TopicInference(object):
         self.numDocs  = len(corpus)
         self.numTypes = len(corpus.vocabulary)
         
-        self.gamma = [DocumentTopicAssignment(doc, numTopics) for doc in corpus]    # posterior
+        self.gamma = [DocumentTopicAssignment(self.numTopics) for i in xrange(self.numDocs)]    # posterior
             # gamma is (j,w,k)
             
-        self.phi   = numpy.zeros((self.numTypes, self.numTopics))
-        self.theta = numpy.zeros((self.numDocs,  self.numTopics))
+        self.phi   = numpy.random.random((self.numTypes, self.numTopics))
+        self.theta = numpy.random.random((self.numDocs,  self.numTopics))
+        
+        for p in self.phi:
+            p /= p.sum()
+        
+        for p in self.theta:
+            p /= p.sum()
 
-        #self.gamma = numpy.ones((self.numDocs, self.numTypes, self.numTopics))
-        # self.gamma = numpy.random.random((self.numDocs, self.numTypes, self.numTopics))
-        # self.phi   = numpy.zeros((self.numTypes, self.numTopics))
-        # self.theta = numpy.zeros((self.numTopics, self.numDocs))
-
-        # for d in self.gamma:
-        #     for w in d:
-        #         w /= w.sum()
-
-        # def countArray(doc):
-        #     return numpy.array([doc.counts[w] for w in corpus.vocabulary])
-        # 
-        # self.observations = numpy.array([countArray(doc) for doc in corpus])
 
     def expectation(self):
-        """calculate expected phi and theta values, returning N_wk, N_kj, and N_k.
-           Actually, we don't really need to calculate phi and theta, since we only 
-           need the Ns for the M step...."""
-        
-        numTopics = self.numTopics
-           
-        def zero_vector():
-            """initialize a zero vector"""
-            return numpy.zeros((numTopics))
-
-        n_wk   = collections.defaultdict(zero_vector)  #numpy.zeros((self.numTypes, self.numTopics))
-        n_kj   = collections.defaultdict(zero_vector) 
-
-        n_k    = numpy.zeros((self.numTopics))
-        n_j    = numpy.zeros((self.numTopics))
-        
-        for j in xrange(self.numDocs):
-            for word in self.corpus.vocabulary:
-                p_topic = self.gamma[j][word] * self.corpus[j][word]
-                
-                if detailed_trace:
-                    print "p_topic %3d %20s %s" % (j, word, p_topic)
-                    
-                n_wk[word] += p_topic
-                n_kj[j]    += p_topic
-                n_k        += p_topic
-        
-        for w in xrange(self.numTypes):
-            word = self.corpus.vocabulary[w]
-            p = n_wk[word]/n_k
-            p /= p.sum()
-            self.phi[w] = p
-
-        for j in xrange(self.numDocs):
-            n_j = n_kj[j].sum()
-            self.theta[j] = n_kj[j]/n_j
-
-            
-        # n_wj      = self.observations.transpose()
-        # gamma_wjk = self.gamma.transpose((1,0,2))
-        
-        # n_wk = numpy.array([numpy.dot(n_wj[w], gamma_wjk[w]) for w in xrange(self.numTypes)])
-        # n_k  = n_wk.sum(axis=0)
-        
-        # self.phi = n_wk/n_k
-        # for w in self.phi:
-        #     w /= w.sum()
-
-        return (n_wk, n_kj, n_k)
-
-    # def expectation_theta(self):
-    #     """calculate expected theta values, returning N_kj"""
-    #     # n_jw      = self.observations
-    #     # gamma_jwk = self.gamma
-    #     
-    #     n_kj   = collections.defaultdict(float)  #numpy.zeros((self.numTypes, self.numTopics))
-    #     
-    #     for w in self.corpus.vocabulary:
-    #         for j in xrange(self.numDocs):
-    #             n_kj[j] += gamma[j][w]
-    #     
-    #     n_kj = numpy.array([numpy.dot(self.observations[j], self.gamma[j]) for j in xrange(self.numDocs)])
-    #     n_j  = n_kj.sum(axis=0)
-    #     
-    #     self.theta = n_kj/n_j
-    #     for j in self.theta:
-    #         j /= j.sum()
-    #     
-    #     return n_kj
-
-    def maximize_gamma(self, n_wk, n_kj, n_k):
         """update gamma using new param values"""
         for j in xrange(self.numDocs):
             for word in self.corpus.vocabulary:
@@ -152,17 +79,33 @@ class TopicInference(object):
                 self.gamma[j][word] = g
                 # self.gamma[j][word] = n_wk[word] * n_kj[j] / n_k
                 # self.gamma[j][word] /= self.gamma[j][word].sum()
-
-
-    def em(self):
-        """docstring for em"""
+                
+    def maximization(self):
+        """calculate MLE for phi and theta values"""
         
-        (n_wk, n_kj, n_k) = self.expectation()
+        n_wk   = numpy.zeros((self.numTypes, self.numTopics))
+        n_kj   = numpy.zeros((self.numDocs, self.numTopics))
+
+        n_k    = numpy.zeros((self.numTopics))
+        n_j    = numpy.zeros((self.numTopics))
         
+        for w in xrange(self.numTypes):
+            word = self.corpus.vocabulary[w]
+            for j in xrange(self.numDocs):
+                p_topic = self.gamma[j][word] * self.corpus[j][word]
+                
+                if detailed_trace:
+                    print "p_topic %3d %20s %s" % (j, word, p_topic)
+                    
+                n_wk[w] += p_topic
+                n_kj[j] += p_topic
+                n_k     += p_topic
+
         if detailed_trace:
             print "n_wk:"
-            for word in self.corpus.vocabulary:
-                print "\t%20s %s" % (word, n_wk[word])
+            for w in xrange(self.numTypes):
+                word = self.corpus.vocabulary[w]
+                print "\t%20s %s" % (word, n_wk[w])
             
             print "n_kj:"
             for (j, p_topic) in n_kj.iteritems():
@@ -170,7 +113,30 @@ class TopicInference(object):
             
             print "n_k:\t", n_k
         
-        self.maximize_gamma(n_wk, n_kj, n_k)
+        for w in xrange(self.numTypes):
+            p = n_wk[w]/n_k
+            p /= p.sum()
+            self.phi[w] = p
+
+        for j in xrange(self.numDocs):
+            n_j = n_kj[j].sum()
+            self.theta[j] = n_kj[j]/n_j
+
+
+    def logLikelihood(self):
+        """docstring for logLikelihood"""
+        l = 0.0
+        for doc in self.gamma:
+            for w in doc.itervalues():
+                l += log(w.sum())
+        return l
+        
+        
+    def em(self):
+        """docstring for em"""
+        
+        self.expectation()
+        self.maximization()
 
         
     def printPhi(self):
@@ -201,16 +167,22 @@ class TopicInference(object):
                     print "%6.4f" % self.gamma[j][word][k],
                 print
 
+    def printAll(self):
+        """docstring for printAll"""
+        self.printPhi()
+        self.printTheta()
+        # if detailed_trace:
+        self.printGamma()
+
+
     def iterate(self, numIterations=1, startIteration=1):
         """docstring for iterate"""
 
         for i in xrange(numIterations):
             print "iteration %d: " % (i+startIteration)
             self.em()
-            self.printPhi()
-            self.printTheta()
-            if detailed_trace:
-                self.printGamma()
+            print "\t", self.logLikelihood()
+            
         
     def __str__(self):
         """show topic assignments"""
@@ -236,13 +208,7 @@ def main(argv=None):
     print corpus.vocabulary
 
     topics = TopicInference(numTopics, corpus)
-    
-    # topics.printGamma()
-    
-    # for i in xrange(20):
-    #     print "iteration %d: " % i
-    #     topics.iterate()
-    
+        
     return topics
 
 if __name__ == '__main__':
