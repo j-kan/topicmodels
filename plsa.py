@@ -1,18 +1,9 @@
 #! /usr/bin/env python
 
-from __future__ import with_statement
-
-from corpus import *
-# import os.path
-# import re
-# import sys
-# import collections
 import numpy
 import collections
 from math import log, fabs
-
-
-detailed_trace = False
+from corpus import *
 
 
 class DocumentTopicAssignment(collections.defaultdict):
@@ -32,16 +23,6 @@ class DocumentTopicAssignment(collections.defaultdict):
 
         super(DocumentTopicAssignment, self).__init__(zero_vector)
         self.doc = doc
-        # self.gamma_j = collections.defaultdict(random_vector)
-
-
-    # def __getitem__(self, key):
-    #     """delegate to gamma_j"""
-    #     return self.gamma_j[key]
-    #     
-    # def __contains__(self, item):
-    #     """delegate to gamma_j"""
-    #     return item in self.gamma_j
     
     
 
@@ -62,12 +43,6 @@ class TopicInference(object):
         self.phi   = numpy.zeros((self.numTypes, self.numTopics))
         self.theta = numpy.zeros((self.numDocs,  self.numTopics))
         
-        # for p in self.phi:
-        #     p /= p.sum()
-        # 
-        # for p in self.theta:
-        #     p /= p.sum()
-
         self.n_wk   = numpy.random.random((self.numTypes, self.numTopics))
         self.n_kj   = numpy.random.random((self.numDocs, self.numTopics))
 
@@ -75,17 +50,33 @@ class TopicInference(object):
         self.n_j    = self.n_kj.sum(axis=1)
 
 
+    def calc_updated_gamma_w_j(self, w, j):
+        """calculate updated gamma values for a given word and doc index"""
+        # g = self.phi[w] * self.theta[j]
+        g = self.n_wk[w] * self.n_kj[j] / self.n_k
+        g /= g.sum()
+        return g
+
     def expectation(self):
         """update gamma using new param values"""
-        for j in xrange(self.numDocs):
-            for w in xrange(self.numTypes):
-                word = self.corpus.vocabulary[w]
-                # g = self.phi[w] * self.theta[j]
-                g = self.n_wk[w] * self.n_kj[j] / self.n_k
-                g /= g.sum()
-                self.gamma[j][word] = g
+        for w in xrange(self.numTypes):
+            word = self.corpus.vocabulary[w]
+            for j in xrange(self.numDocs):
+                self.gamma[j][word] = self.calc_updated_gamma_w_j(w,j)
+
                 
-    def maximization(self):
+    def calc_updated_phi_w(self, w):
+        """calc the updated phi value for a given word index"""
+        p = self.n_wk[w]/self.n_k
+        p /= p.sum()
+        return p
+
+    def calc_updated_theta_j(self, j):
+        """calc the updated theta value for a given doc index"""
+        return self.n_kj[j]/self.n_j[j]
+        
+        
+    def maximization(self, trace=False):
         """calculate MLE for phi and theta values"""
         
         self.n_wk *= 0
@@ -98,41 +89,35 @@ class TopicInference(object):
             word = self.corpus.vocabulary[w]
             for j in xrange(self.numDocs):
                 p_topic = self.gamma[j][word] * self.corpus[j][word]
-                
-                if detailed_trace:
-                    print "p_topic %3d %20s %s" % (j, word, p_topic)
-                    
                 self.n_wk[w] += p_topic
                 self.n_kj[j] += p_topic
                 # self.n_k     += p_topic
+                
+                if trace:
+                    print " %3d %20s %s" % (j, word, p_topic)
 
         self.n_k    = self.n_wk.sum(axis=0)
         self.n_j    = self.n_kj.sum(axis=1)
                 
-
-        if detailed_trace:
-            print "n_wk:"
-            for w in xrange(self.numTypes):
-                word = self.corpus.vocabulary[w]
-                print "\t%20s %s" % (word, self.n_wk[w])
-            
-            print "n_kj:"
-            for j in xrange(self.numDocs):
-                print "\t%20s %s" % (j, self.n_kj[j])
-            
-            print "n_k:\t", self.n_k
+        if trace:
+            self.printNs()
         
         for w in xrange(self.numTypes):
-            p = self.n_wk[w]/self.n_k
-            p /= p.sum()
-            self.phi[w] = p
+            self.phi[w] = self.calc_updated_phi_w(w)
 
         for j in xrange(self.numDocs):
-            #self.n_j = self.n_kj[j].sum()
-            self.theta[j] = self.n_kj[j]/self.n_j[j]
+            self.theta[j] = self.calc_updated_theta_j(j)
 
 
-    def logLikelihood(self):
+
+    def em(self):
+        """docstring for em"""
+
+        self.expectation()
+        self.maximization()
+
+
+    def logLikelihood(self, trace=False):
         """docstring for logLikelihood"""
         l = numpy.dot(self.phi, self.theta.transpose())
         ll = 0.0
@@ -142,17 +127,28 @@ class TopicInference(object):
                 n = self.corpus[j][word]
                 if n > 0:
                     p = l[(w,j)]
-                    print "p %d %20s %f %d" % (j, word, p, n)
                     ll += n*log(p)
+                    if trace:
+                        print "\t%d %20s %6.4f * %2d" % (j, word, p, n)
         return ll
         
         
-    def em(self):
-        """docstring for em"""
-        
-        self.expectation()
-        self.maximization()
 
+        
+    def printNs(self):
+        """print N_xx matrices"""
+        print "n_wk:"
+        for w in xrange(self.numTypes):
+            word = self.corpus.vocabulary[w]
+            print "\t%20s %s" % (word, self.n_wk[w])
+        
+        print "n_kj:"
+        for j in xrange(self.numDocs):
+            print "\t%20s %s" % (j, self.n_kj[j])
+        
+        print "n_k:\t\t", self.n_k
+        print "n_j:\t\t", self.n_j
+        
         
     def printPhi(self):
         """docstring for printPhi"""
@@ -186,7 +182,6 @@ class TopicInference(object):
         """docstring for printAll"""
         self.printPhi()
         self.printTheta()
-        # if detailed_trace:
         self.printGamma()
 
 
@@ -194,21 +189,25 @@ class TopicInference(object):
         """docstring for iterate"""
         
         prev_ll = 0
+        diff = 0
+        
         for i in xrange(numIterations):
-            print "iteration %d: " % (i+startIteration)
+            print "iteration %3d: " % (i+startIteration),
             self.em()
             ll = self.logLikelihood()
             diff = fabs((ll - prev_ll)/ll)
             prev_ll = ll
-            print "%f (changed %f)" % (ll, diff)
+            print "%6.4f  (%8.4f %%)" % (ll, diff*100)
             
             if diff < convergence:
                 break
+        
+        return diff
             
         
-    def __str__(self):
-        """show topic assignments"""
-        return self.gamma.__str__() 
+    # def __str__(self):
+    #     """show topic assignments"""
+    #     return self.gamma.__str__() 
     
                 
          
@@ -230,8 +229,13 @@ def main(argv=None):
     print corpus.vocabulary
 
     topics = TopicInference(numTopics, corpus)
+    
+    if topics.iterate(100, 0.000001) < 0.000001:
+        topics.printPhi()
+        topics.printTheta()
         
     return topics
+    
 
 if __name__ == '__main__':
     sys.exit(main())
