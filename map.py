@@ -52,13 +52,13 @@ def main(argv=None):
     corpus.readfiles(doc_directory)
     #print corpus.vocabulary
 
-    topics = MAPTopicInference(numTopics, corpus)
+    maptopics = MAPTopicInference(numTopics, corpus)
     
-    if topics.iterate(100, 0.000001) < 0.000001:
-        topics.printPhi()
-        topics.printTheta()
+    if maptopics.iterate(100, 0.000001) < 0.000001:
+        maptopics.printPhi()
+        maptopics.printTheta()
         
-    return topics
+    return maptopics
     
 
 if __name__ == '__main__':

@@ -45,13 +45,18 @@ class TopicInference(object):
         
         self.n_wk   = numpy.random.random((self.numTypes, self.numTopics))
         self.n_kj   = numpy.random.random((self.numDocs, self.numTopics))
+        
+            # initialize by assigning types to topics randomly
+            #  so this is equivalent to multiplying these matrices by the token count for the appropriate dimension
+            #  easier to explicitly manage type/topic assignments in 2 parallel arrays for w and z
 
         self.n_k    = self.n_wk.sum(axis=0)
         self.n_j    = self.n_kj.sum(axis=1)
 
 
     def calc_updated_gamma_w_j(self, w, j):
-        """calculate updated gamma values for a given word and doc index"""
+        """calculate updated gamma values for a given word and doc index.
+            We can drop n_j because it doesn't depend on k, and we normalize over k"""
         # g = self.phi[w] * self.theta[j]
         g = self.n_wk[w] * self.n_kj[j] / self.n_k
         g /= g.sum()
@@ -79,22 +84,22 @@ class TopicInference(object):
     def maximization(self, trace=False):
         """calculate MLE for phi and theta values"""
         
-        self.n_wk *= 0
-        self.n_kj *= 0
+        self.n_wk.fill(0.0)
+        self.n_kj.fill(0.0)
 
-        self.n_k  *= 0
-        self.n_j  *= 0
+        self.n_k.fill(0.0)
+        self.n_j.fill(0.0)
         
         for w in xrange(self.numTypes):
             word = self.corpus.vocabulary[w]
             for j in xrange(self.numDocs):
-                p_topic = self.gamma[j][word] * self.corpus[j][word]
-                self.n_wk[w] += p_topic
-                self.n_kj[j] += p_topic
-                # self.n_k     += p_topic
+                if word in self.corpus[j]:
+                    p_topic = self.gamma[j][word] * self.corpus[j][word]
+                    self.n_wk[w] += p_topic
+                    self.n_kj[j] += p_topic
                 
-                if trace:
-                    print " %3d %20s %s" % (j, word, p_topic)
+                    if trace:
+                        print " %3d %20s %s" % (j, word, p_topic)
 
         self.n_k    = self.n_wk.sum(axis=0)
         self.n_j    = self.n_kj.sum(axis=1)
@@ -204,12 +209,64 @@ class TopicInference(object):
         
         return diff
             
+    def topic_words(self, numWords=10):
+        """find topic words"""
+
+        n_kw = self.n_wk.transpose()
+        n_w  = self.n_wk.sum(axis=1)
+        
+        def top_words(i, vocabulary):
+            p_w = n_kw[i]/n_w
+            indices = p_w.argsort()[::-1][0:numWords]  # [::-1] == reverse
+            return ' '.join([vocabulary[j] for j in indices])
+        
+        return [ top_words(i, self.corpus.vocabulary) for i in xrange(self.numTopics) ]
         
     # def __str__(self):
     #     """show topic assignments"""
     #     return self.gamma.__str__() 
     
-                
+
+def topic_words(topics, numWords=10):
+    """find topic words"""
+    
+    def top_words(i, vocabulary):
+        indices = topics.phi[:,i].argsort()[::-1]  # [::-1] == reverse
+        return ' '.join([vocabulary[j] for j in indices[0:numWords]])
+    
+    return [ top_words(i, topics.corpus.vocabulary) for i in xrange(topics.numTopics) ]
+
+def topic_words_by_count(topics, numWords=10):
+    """find topic words"""
+    
+    def top_words(i, vocabulary):
+        indices = topics.n_wk[:,i].argsort()[::-1]  # [::-1] == reverse
+        return ' '.join([vocabulary[j] for j in indices[0:numWords]])
+    
+    return [ top_words(i, topics.corpus.vocabulary) for i in xrange(topics.numTopics) ]
+    
+    
+def entropy(distribution):
+    return -sum([p * log(p) for p in distribution if p > 0])
+
+def kl_divergence(d1, d2):
+    """docstring for kl_divergence"""
+    return sum([p * log(p/q) for (p,q) in zip(d1, d2) if q > 0])
+    
+
+def topic_words_entropy(topics, numWords=10):
+    """docstring for topic_entropy"""
+    # p_wk = topics.n_wk/topics.n_k
+    p_k = topics.n_k/topics.n_k.sum()
+    kl = numpy.array([kl_divergence(p_kw, p_k) for p_kw in topics.phi])
+    
+    def top_words(i, vocabulary):
+        p = topics.n_wk[:,i]*kl
+        indices = p.argsort()[::-1]  # [::-1] == reverse
+        return ' '.join([vocabulary[j] for j in indices[0:numWords]])
+    
+    return [ top_words(i, topics.corpus.vocabulary) for i in xrange(topics.numTopics) ]
+            
          
 def main(argv=None):
     if argv is None:
@@ -230,9 +287,10 @@ def main(argv=None):
 
     topics = TopicInference(numTopics, corpus)
     
-    if topics.iterate(100, 0.000001) < 0.000001:
+    if topics.iterate(100, 0.00001) < 0.00001:
         topics.printPhi()
         topics.printTheta()
+        print topics.topic_words(10)
         
     return topics
     

@@ -73,6 +73,9 @@ class Document(object):
         """Delegate to self.counts"""
         return self.counts[key]
     
+    def __contains__(self, key):
+        """Delegate to self.counts"""
+        return key in self.counts
     
 
 class Corpus(list):
